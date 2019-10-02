@@ -1,0 +1,64 @@
+This is BibTeX, Version 0.99d (TeX Live 2016)
+Capacity: max_strings=35307, hash_size=35307, hash_prime=30011
+The top-level auxiliary file: Chapter1.aux
+The style file: babplain.bst
+I couldn't open database file all.bib
+---line 38 of file Chapter1.aux
+ : \bibdata{all
+ :             }
+I'm skipping whatever remains of this command
+I found no database files---while reading file Chapter1.aux
+Warning--I didn't find a database entry for "harper2016"
+Warning--I didn't find a database entry for "sartori2003"
+Warning--I didn't find a database entry for "ehrlich2003"
+Warning--I didn't find a database entry for "ehrlich1968"
+Warning--I didn't find a database entry for "leeson18"
+Warning--I didn't find a database entry for "kash2015"
+Warning--I didn't find a database entry for "debeer2014"
+Warning--I didn't find a database entry for "ayuso2014"
+Warning--I didn't find a database entry for "citi2016"
+Warning--I didn't find a database entry for "macken2016"
+Warning--I didn't find a database entry for "raftery2012"
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+You've used 0 entries,
+            2788 wiz_defined-function locations,
+            643 strings with 6003 characters,
+and the built_in function-call counts, 44 in all, are:
+= -- 0
+> -- 0
+< -- 0
++ -- 0
+- -- 0
+* -- 2
+:= -- 9
+add.period$ -- 0
+call.type$ -- 0
+change.case$ -- 0
+chr.to.int$ -- 0
+cite$ -- 0
+duplicate$ -- 0
+empty$ -- 1
+format.name$ -- 0
+if$ -- 1
+int.to.chr$ -- 0
+int.to.str$ -- 0
+missing$ -- 0
+newline$ -- 15
+num.names$ -- 0
+pop$ -- 0
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 1
+stack$ -- 0
+substring$ -- 0
+swap$ -- 0
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 0
+while$ -- 0
+width$ -- 0
+write$ -- 14
+(There were 2 error messages)

@@ -1,0 +1,785 @@
+% Appendix E
+
+\chapter{C\'odigos R para Simulaci\'on} % Main appendix title
+
+\label{AppendixE} % For referencing this appendix elsewhere, use \ref{AppendixA}
+
+\vspace{-1cm}
+Los siguientes c\'odigos han sido elaborados con el software \textbf{R} para el an\'alisis estad\'istico. \textbf{R} es un software de libre acceso bajo el proyecto GNU que se puede descargar desde la p\'agina oficial \textit{\emph{https://www.r-project.org}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%% CAPÍTULO 1 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\section{C\'odigos correspondientes al cap\'itulo 1}
+
+%%%%%%%%%%%%%%%%%%%%%%%%% FIGURA 1.2. %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+La mayor\'ia de los c\'odigos de este cap\'itulo tienen como fuente de datos organismos como el \textit{Eurostat}, las \textit{Naciones Unidas} y el \textit{World Bank} los cuales poseen amplias bases de datos donde recogen multitud de estad\'isticas poni\'endolas a disposici\'on del usuario en diversos formatos. Al ser \textbf{R} un software de libre acceso, la comunidad cient\'ifica tambi\'en pone a disposici\'on de forma libre, los c\'odigos para que el usuario pueda replicar, simular y analizar sirvi\'endose como base los ya disponibles en los diferentes repositorios.\\ 
+
+\noindent \textbullet\hspace{0.3cm} \textbf{Figura 1.2:} Mapa de las estructuras de poblaci\'on en las regiones NUTS-3 en 2015.\\
+
+\noindent El c\'odigo para la elaboraci\'on de este mapa exige un fichero fuente principal que ejecuta el resto o c\'odigo master
+
+\begin{lstlisting}[language=R, caption=C\'odigo master.]
+# Paso 1. Preparar la sesion en R
+>source("R/0-prepare-r-session.R")
+
+# Paso 2. Cargar las funciones 'customizadas'
+>source("R/1-own-functions.R")
+
+# Paso 3. Dibujar el mapa
+>source("R/3-the-map.R")
+
+\end{lstlisting}
+
+\noindent Previamente, se han de tener preparados los siguientes archivos:
+
+\begin{lstlisting}[language=R, caption=C\'odigo 0 para preparar la sesi\'on.]
+# instalar 'pacman' para agilizar las instalaciones de paquetes adicionales
+>if (!require("pacman", character.only = TRUE)){
+        install.packages("pacman", dep = TRUE)
+        if (!require("pacman", character.only = TRUE))
+                stop("Package not found")
+}
+# Paquetes requeridos
+>pkgs <- c(
+        "tidyverse", 
+        "ggtern",
+        "gridExtra",
+        "lubridate",
+        "ggthemes",
+        "extrafont",
+        "hrbrthemes",
+        "rgdal",
+        "rgeos",
+        "maptools",
+        "eurostat",
+        "tricolore"
+)
+# instalacion de paquetes que faltan solo si alguno ha desaparecido
+>if(!sum(!p_isinstalled(pkgs))==0){
+        p_install(
+                package = pkgs[!p_isinstalled(pkgs)], 
+                character.only = TRUE
+        )
+}
+# Cargar los paquetes
+>p_load(pkgs, character.only = TRUE)
+
+# Descargar la fuente Roboto Consensed font --  renombrada posteriormente 'myfont'
+>import_roboto_condensed()
+\end{lstlisting}
+
+\begin{lstlisting}[language=R, caption=C\'odigo 1 con las funciones propias.]
+>gghole <- function(fort){
+        poly <- fort[fort$id % in % fort[fort$hole,]$id,]
+        hole <- fort[!fort$id % in % fort[fort$hole,]$id,]
+        out <- list(poly,hole)
+        names(out) <- c('poly','hole')
+        return(out)
+}
+# Funcion para crear limites de aumento
+>zoom_limits <- function(
+        df, 
+        keep_center = TRUE, 
+        one_pp_margin = FALSE,
+        center = apply(df, 2, mean)
+) {
+mins <- apply(df, 2, min)
+span <- max(apply(df, 2, function(x) diff(range(x))))
+if(one_pp_margin == TRUE & min(mins) > .01){
+         mins <- mins - .01
+         span <- span + .01
+        }
+        if(keep_center == TRUE){
+                limits <- rbind(
+                        center - (1/3)*span/(sqrt(2)/2),
+                        center + (2/3)*span/(sqrt(2)/2)
+                )
+        } else {
+                limits <- rbind(
+                        mins,
+                        c(1 - (mins[2] + mins[3]),
+                           1 - (mins[1] + mins[3]),
+                           1 - (mins[1] + mins[2])
+                           )
+                         ) 
+                  }
+        return(limits)
+}
+# coordenadas y etiquetas para las líneas de cuadricula centradas del diagrama ternario
+>TernaryCentroidGrid <- function (center) {
+        labels <- seq(-1, 1, 0.1)
+        labels <- data.frame(
+                L = labels[labels >= -center[1]][1:10],
+                T = labels[labels >= -center[2]][1:10],
+                R = labels[labels >= -center[3]][1:10]
+        )
+        breaks = data.frame(
+                L = labels$L + center[1],
+                T = labels$T + center[2],
+                R = labels$R + center[3]
+        ) 
+        list(labels = labels, breaks = breaks)
+}
+\end{lstlisting}
+
+\begin{lstlisting}[language=R, caption=C\'odigo 2 con la construcci\'on del mapa]
+# cargar datos previamente guardados
+>load("data/180523-both15.RData")
+>load("data/180523-geodata.RData")
+
+# crear mapa en blanco
+>basemap <- ggplot()+
+        geom_polygon(data = neigh,
+              aes(x = long, y = lat, group = group),
+              fill = "grey90",color = "grey90")+
+        coord_equal(ylim = c(1350000,5550000), xlim = c(2500000, 7500000))+
+        theme_map(base_family = font_rc)+
+        theme(panel.border = element_rect(color = "black",size = .5,fill = NA),
+              legend.position = c(1, 1),
+              legend.justification = c(1, 1),
+              legend.background = element_rect(colour = NA, fill = NA),
+              legend.title = element_text(size = 15),
+              legend.text = element_text(size = 15))+
+        scale_x_continuous(expand = c(0,0)) +
+        scale_y_continuous(expand = c(0,0)) +
+        labs(x = NULL, y = NULL) 
+
+# Leyenda ----------------------------------------------
+
+# Media de los datos completos -- incluyendo Turquia
+>center <- both15 % >% 
+        select(2:6) % >% 
+        summarise_all(.funs = funs(sum)) % >% 
+        transmute(e = Y_GE65 / TOTAL,
+                  w = `Y15-64` / TOTAL,
+                  y = Y_LT15 / TOTAL) % >% 
+        gather() % >% pull(value)
+
+>mins <- apply(both15 \%>\% select(so, sw, sy), 2, min)
+>zommed_side <- (1 - (mins[2] + mins[3])) - mins[1]
+>true_scale <- 1 / zommed_side
+
+>tric_diff <- Tricolore(both15, p1 = 'Y_GE65', p2 = 'Y15-64', p3 = 'Y_LT15',
+                center = center, spread = true_scale, show_data = F,
+                contrast = .5, lightness = 1, chroma = 1, hue = 2/12)
+                       
+# añadir proporciones de color al mapa
+>both15$rgb_diff <- tric_diff$hexsrgb
+
+# panel de puntos porcentuales
+>legend_grid <- TernaryCentroidGrid(center)
+
+>legend_limits <- zoom_limits(
+        df = both15 % >% select(so, sw, sy),
+        keep_center = FALSE,
+        one_pp_margin = TRUE
+) 
+
+# output de la leyenda principal  --------------------------------------------
+
+>tric_diff$legend +
+        geom_point(data = both15, aes(so, sw, z = sy), 
+                   shape = 46, color = "grey20", size = 3)+
+        geom_point(data = both15 % >% filter(str_sub(id, 1, 4)=="UKI4"), 
+                   aes(so, sw, z = sy), 
+                   shape = 1, color = "darkgreen", size = 3)+
+        geom_point(data = both15 % >% filter(id == "TRC11"), 
+                   aes(so, sw, z = sy), 
+                   shape = 1, color = "darkblue", size = 3)+
+        geom_point(data = both15 % >% filter(id == "ES113"), 
+                   aes(so, sw, z = sy), 
+                   shape = 1, color = "darkred", size = 3)+
+        geom_point(data = tibble(so = center[1], sw = center[2], sy = center[3]), 
+                   aes(so, sw, z = sy), 
+                   shape = 43, color = "white", size = 5)+
+        scale_L_continuous("Mayores\n(65+)", limits = legend_limits[,1]) +
+        scale_T_continuous("Edad laboral\n(15-64)", limits = legend_limits[,2]) +
+        scale_R_continuous("Jóvenes\n(0-14)", limits = legend_limits[,3]) +
+        Larrowlab("% edad 65+") +
+        Tarrowlab("% edad 15-64") +
+        Rarrowlab("% edad 0-14") +
+        theme_classic() +
+        theme(plot.background = element_rect(fill = "grey90", colour = NA),
+              tern.axis.arrow.show = TRUE, 
+              tern.axis.ticks.length.major = unit(12, "pt"),
+              tern.axis.text = element_text(size = 12, colour = "grey20"),
+              tern.axis.title.T = element_text(),
+              tern.axis.title.L = element_text(hjust = 0.2, vjust = 0.7, angle = -60),
+              tern.axis.title.R = element_text(hjust = 0.8, vjust = 0.6, angle = 60),
+              text = element_text(family = font_rc, size = 14, color = "grey20"))
+
+>legend_main <- last_plot()
+
+>center
+
+>both15 % >% filter(str_sub(id, 1, 4)=="UKI4") % >% 
+        summarise(so = so % >% mean, sw = sw % >% mean, sy = sy % >% mean)
+
+>both15 % >% filter(id == "TRC11") % >% select(so:sy)
+
+>both15 % >% filter(id == "ES113") % >% select(so:sy)
+
+# explicacion grafico ternario ------------------------------------------------
+
+>ggtern() +
+        geom_point(data = both15, aes(so, sw, z = sy), 
+                   shape = 46, color = "grey20", size = 1)+
+        geom_Lline(data = center, Lintercept = center[1], color = "gold", size = 1)+
+        geom_Tline(data = center, Tintercept = center[2], color = "cyan", size = 1)+
+        geom_Rline(data = center, Rintercept = center[3], color = "magenta", size = 1)+
+        scale_L_continuous("M", limits = legend_limits[,1]) +
+        scale_T_continuous("L", limits = legend_limits[,2]) +
+        scale_R_continuous("J", limits = legend_limits[,3]) +
+        geom_point(data = tibble(so = center[1], sw = center[2], sy = center[3]), 
+                   aes(so, sw, z = sy), 
+                   shape = 43, color = "grey10", size = 5)+
+        theme_classic() +
+        theme(plot.background = element_rect(fill = NA, colour = NA),
+              text = element_text(family = font_rc, size = 10, color = "grey20"),
+              tern.axis.line.L = element_line(color = "gold", size = 1),
+              tern.axis.line.T = element_line(color = "cyan", size = 1),
+              tern.axis.line.R = element_line(color = "magenta", size = 1))
+
+>legend_explain <- last_plot()
+
+>ggplot()+
+        coord_equal(xlim = c(0, 1), ylim = c(0, .5), expand = c(0,0))+
+        scale_y_continuous(limits = c(0, .5))+
+        
+        annotation_custom(ggplotGrob(legend_explain),
+             xmin = -.025, xmax = .5, 
+             ymin = -.025, ymax = .475)+
+        
+        theme_map() % +replace%
+        theme(plot.margin=grid::unit(rep(-0.2, 4), "lines"),
+              plot.background = element_rect(fill = NA, colour = NA))+
+        
+        annotate("text", x = .5, y = .48, hjust = .5, vjust = 1,
+                 label = toupper("interpretacion del esquema ternario"),
+                 size = 5, family = font_rc, color = "grey20")+
+        
+        geom_curve(data = tibble(x = .325, y = .35, xend = .225, yend = .3), 
+                   aes(x = x, y = y, xend = xend, yend = yend),
+                   curvature = .3,
+                   color = "cyan", 
+                   arrow = arrow(type = "closed", length = unit(0.1, "cm")))+
+        annotate("text", x = .335, y = .4, hjust = 0, vjust = 1, lineheight = .9,
+                 label = "Mas gente en EDAD LABORAL en este paralelogramo,\ncomparado con la media UE; menos ninos y ancianos\n(encima linea azul, debajo lineas rosas y amarillas)",
+                 size = 3.75, family = font_rc, fontface = 3, color = "cyan3")+
+        
+        geom_curve(data = tibble(x = .55, y = .225, xend = .275, yend = .225), 
+                   aes(x = x, y = y, xend = xend, yend = yend),
+                   curvature = .15,
+                   color = "mediumpurple1", 
+                   arrow = arrow(type = "closed", length = unit(0.1, "cm")))+
+        annotate("text", x = .56, y = .225, hjust = 0, vjust = .5, lineheight = .9,
+                 label = "Menos gente MAYOR\nen este triángulo;\nmás niños y adultos",
+                 size = 3.75, family = font_rc, fontface = 3, color = "mediumpurple3")+
+        
+        geom_curve(data = tibble(x = .75, y = .1, xend = .325, yend = .1), 
+                   aes(x = x, y = y, xend = xend, yend = yend),
+                   curvature = 0,
+                   color = "magenta", 
+                   arrow = arrow(type = "closed", length = unit(0.1, "cm")))+
+        annotate("text", x = .76, y = .1, hjust = 0, vjust = .5, lineheight = .9,
+                 label = "Mas NINOS; menos\nadultos y ancianos",
+                 size = 3.75, family = font_rc, fontface = 3, color = "magenta3")
+
+>explanation <- last_plot()
+
+>ggplot()+
+        coord_equal(xlim = c(0, 1), ylim = c(0, 1.4), expand = c(0,0))+
+       
+        annotate("text", x = .5, y = 1.37, hjust = .5, vjust = 1,
+                 label = toupper("Esquema de códigos-color"),
+                 size = 7, family = font_rc, color = "grey20")+
+        annotation_custom(ggplotGrob(legend_main),
+                          xmin = .02,xmax = .98, 
+                          ymin = .5, ymax = 1.3)+
+            
+        annotation_custom(ggplotGrob(explanation),
+                          xmin = -.01, xmax = .99, 
+                          ymin = -.03, ymax = .47)+
+       
+        geom_curve(data = tibble(x = .33, y = 1.15, xend = .4375, yend = .8175), 
+                   aes(x = x, y = y, xend = xend, yend = yend),
+                   curvature = -0.3,
+                   color = "white", 
+                   arrow = arrow(type = "closed", length = unit(0.1, "cm")))+
+        annotate("text", x = .315, y = 1.15, hjust = 1, vjust = .5, lineheight = .9,
+                 label = "Estructura de edad de\nla población Europea:\nJovenes -- 16.7% \nEdad laboral -- 65.8% \nAncianos -- 17.4%",
+                 size = 4, family = font_rc, fontface = 3, color = "grey20")+
+        
+        geom_curve(data = tibble(x = .73, y = 1.12, xend = .535, yend = .935), 
+                   aes(x = x, y = y, xend = xend, yend = yend),
+                   curvature = 0.45,
+                   color = "darkgreen", size = .5,
+                   arrow = arrow(type = "closed", length = unit(0.1, "cm")))+
+        annotate("text", x = .95, y = 1.12, hjust = 1, vjust = .5, lineheight = .9,
+                 label = "Interior Londres - Este\nestructura de edad media:\nJovenes -- 18.4% \nEdad laboral -- 73.9% \nAncianos --   7.6%",
+                 size = 4, family = font_rc, fontface = 3, color = "grey20")+
+        
+        geom_curve(data = tibble(x = .89, y = .74, xend = .71, yend = .735), 
+                   aes(x = x, y = y, xend = xend, yend = yend),
+                   curvature = -0.45,
+                   color = "darkblue", size = .5,
+                   arrow = arrow(type = "closed", length = unit(0.1, "cm")))+
+        annotate("text", x = .95, y = .84, hjust = 1, vjust = .5, lineheight = .9,
+                 label = "Gaziantep\n(Turquía):\nJ -- 33.6% \nL -- 61.5% \nM --   4.9%",
+                 size = 3.5, family = font_rc, fontface = 3, color = "grey20")+
+        
+        geom_curve(data = tibble(x = .13, y = .74, xend = .245, yend = .71), 
+                   aes(x = x, y = y, xend = xend, yend = yend),
+                   curvature = 0.25,
+                   color = "darkred", size = .5,
+                   arrow = arrow(type = "closed", length = unit(0.1, "cm")))+
+        annotate("text", x = .19, y = .84, hjust = 1, vjust = .5, lineheight = .9,
+                 label = "Provincia de\nOrense (España):\nJ --   9.7% \nL -- 59.9% \nM -- 30.4%",
+                 size = 3.5, family = font_rc, fontface = 3, color = "grey20")+
+        
+        theme_map()+
+        theme(text = element_text(family = font_rc, lineheight = .75)) % +replace%
+        theme(plot.margin=grid::unit(rep(-0.2, 4), "lines"),
+              plot.background = element_rect(fill = "grey90", colour = "grey20"))
+
+legend <- last_plot()
+
+# assemble the final plot
+basemap +
+        geom_map(map = gghole(gd3)[[1]], data = both15,
+                 aes(map_id = id, fill = rgb_diff))+
+        geom_map(map = gghole(gd3)[[2]], data = both15,
+                 aes(map_id = id, fill = rgb_diff))+
+        scale_fill_identity()+
+        geom_path(data = bord, aes(long, lat, group = group), 
+                  color = "white", size = .5)+
+        theme(legend.position = "none") + 
+        annotation_custom(ggplotGrob(legend),
+                          xmin = 56.5e5,xmax = 74.5e5, 
+                          ymin = 28.8e5, ymax = 55.8e5)+
+        # autor
+        annotate("text", x = 67e5, y = 17.2e5, hjust = 0, vjust = 0,
+                 label = "©Jose R. Caro Barrera", fontface = 2,
+                 size = 5, family = font_rc, color = "grey20")+
+        annotate("text", x = 67e5, y = 16.5e5, hjust = 0, vjust = 0,
+                 label = "jrcarobarrera@gmail.com",
+                 size = 4.5, family = font_rc, color = "grey40")+
+        annotate("text", x = 68.5e5, y = 15.5e5, hjust = 0, vjust = 0,
+                 label = "A partir de", fontface = 2,
+                 size = 4, family = font_rc, color = "#35978f")+
+        annotate("text", x = 74.5e5, y = 14.7e5, hjust = 1, vjust = 0,
+                 label = "J. Schöley & I. Kashnitsky", fontface = 1,
+                 size = 4.5, family = font_rc, color = "grey20")+
+        #annotate("text", x = 74.5e5, y = 14e5, hjust = 1, vjust = 0,
+                 #label = "Ilya Kashnitsky",
+                 #size = 4.5, family = font_rc, color = "grey40")+
+        # fecha
+        #annotate("text", x = 67e5, y = 14.7e5, hjust = 0, vjust = 0,
+                 #label = "2018", fontface = 2,
+                 #size = 5, family = font_rc, color = "#35978f")+
+        # datos
+        annotate("text", x = 26e5, y = 14e5, hjust = 0, vjust = 0, lineheight = .9,
+                 label = "Datos: Eurostat, 2015; Geodata: NUTS 2013\nReproduce: https://github.com/ikashnitsky/the-lancet-2018",
+                 size = 4.5, family = font_rc, color = "grey50")+
+        # titulo
+        annotate("text", x = 26e5, y = 55e5, hjust = 0, vjust = 1, 
+                 label = "ESTRUCTURAS DE POBLACION REGIONAL",
+                 size = 8, family = font_rc, color = "grey20")
+
+>together <- last_plot()
+
+# guardar
+>ggsave("nombre", together, width = 17, height = 13.76, dpi = 750, type = "cairo-png")
+
+\end{lstlisting}
+%%%%%%%%%%%%%%%%%%%%%%%%% FIGURA 1.3. %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\noindent \textbullet\hspace{0.3cm} \textbf{Figura 1.3:} Mapa clasificaci\'on urbana y rural NUTS-2 de Europa seg\'un Eurostat.
+
+\begin{lstlisting}[language=R, caption=C\'odigo R para la elaboraci\'on de la clasificaci\'on urbana/rural regiones NUTS-2 correspondiente a la figura 1.3]
+> library(tidyverse)
+> library(ggthemes)
+> library(rgdal)
+> library(viridis)
+> library(RColorBrewer)
+> library(extrafont)
+> myfont <- "Roboto Condensed"
+
+# load the already prepared data
+> load(url("https://ikashnitsky.github.io/share/1705-map-subplots/df-27-261-urb-rur.RData"))
+
+# fortify spatial objects
+> bord <- fortify(Sborders)
+> fort <- fortify(Sn2, region = "id")
+
+> fort_map <- left_join(df,fort,"id")
+
+# create a blank map
+> basemap <- ggplot()+
+  geom_polygon(data = fortify(Sneighbors),aes(x = long, y = lat, group = group),
+               fill = "grey90",color = "grey90")+
+  coord_equal(ylim = c(1350000,5450000), xlim = c(2500000, 6600000))+
+  theme_map(base_family = myfont)+
+  theme(panel.border = element_rect(color = "black",size = .5,fill = NA),
+        legend.position = c(1, 1),
+        legend.justification = c(1, 1),
+        legend.background = element_rect(colour = NA, fill = NA),
+        legend.title = element_text(size = 15),
+        legend.text = element_text(size = 15))+
+> scale_x_continuous(expand = c(0,0)) +
+> scale_y_continuous(expand = c(0,0)) +
+> labs(x = NULL, y = NULL)
+
+> ggsave(filename = "mapabase.png", basemap, width = 5, height = 5)
+
+> makeplot_mosaic <- function(data, x, y, ...){
+  xvar <- deparse(substitute(x))
+  yvar <- deparse(substitute(y))
+  mydata <- data[c(xvar, yvar)];
+  mytable <- table(mydata);
+  widths <- c(0, cumsum(apply(mytable, 1, sum)));
+  heights <- apply(mytable, 1, function(x){c(0, cumsum(x/sum(x)))});
+  
+> alldata <- data.frame();
+> allnames <- data.frame();
+> for(i in 1:nrow(mytable)){
+   for(j in 1:ncol(mytable)){
+   alldata <- rbind(alldata, c(widths[i], 
+                                  widths[i+1], 
+                                  heights[j, i], 
+                                  heights[j+1, i]));
+  }
+  }
+> colnames(alldata) <- c("xmin", "xmax", "ymin", "ymax")
+  
+> alldata[[xvar]] <- rep(dimnames(mytable)[[1]], 
+                         rep(ncol(mytable), nrow(mytable)));
+> alldata[[yvar]] <- rep(dimnames(mytable)[[2]], nrow(mytable));
+  
+> ggplot(alldata, aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)) + 
+    geom_rect(color="white", aes_string(fill=yvar)) +
+    xlab(paste(xvar, "(count)")) + 
+    ylab(paste(yvar, "(proportion)"));
+ }
+
+> typ_mosaic <- makeplot_mosaic(data = df \%>\% mutate(type = as.numeric(type)), 
+                              x = subregion, y = type)+
+> theme_void()+
+  scale_fill_viridis(option = "B", discrete = T, end = .8)+
+  scale_y_continuous(limits = c(0, 1.4))+
+  annotate("text",x = c(27, 82.5, 186), y = 1.05, 
+           label=c("ESTE", "SUR", "OESTE"), 
+           size = 4, fontface = 2, 
+           vjust = 0.5, hjust = 0,
+           family = myfont) + 
+  coord_flip()+
+  theme(legend.position = "none")
+
+> ggsave(filename = "mosaico.png", typ_mosaic, width = 4, height = 3)
+
+> gghole <- function (fort) {
+  poly <- fort[fort$id \%in\% fort[fort$hole, ]$id, ]
+  hole <- fort[!fort$id \%in\% fort[fort$hole, ]$id, ]
+  out <- list(poly, hole)
+  names(out) <- c("poly", "hole")
+  return(out)
+ }
+# pal para las subregiones
+> brbg3 <- brewer.pal(11,"BrBG")[c(8,2,11)]
+
+# anotar mapas con las subregiones de Europa
+> an_sub <- basemap +
+> geom_polygon(data = gghole(fort_map)[[1]], 
+               aes(x = long, y = lat, group = group, fill = subregion),
+               color = NA)+
+> geom_polygon(data  =  gghole(fort_map)[[2]], 
+               aes(x = long, y = lat, group = group, fill = subregion),
+               color = NA)+
+> scale_fill_manual(values = rev(brbg3)) +
+> theme(legend.position = "none")
+
+>ggsave(filename = "sub.png", an_sub, width = 4, height = 4)
+
+# finalmente el mapa de la tipologia Urb/Rur
+
+>caption <- "Clasificacion: De Beer, J., Van Der Gaag, N., & Van Der Erf, R. (2014).\n Nueva clasificacion de las regiones urbanas y rurales en Europa NUTS-2. NIDI Working Papers, 2014/3.\n Extraido de http://www.nidi.nl/shared/content/output/papers/nidi-wp-2014-03.pdf\n Hecho con R - \copyright Jose R. Caro Barrera a partir de I. Kashnitsky"
+
+>typ <-  basemap + 
+ geom_polygon(data = gghole(fort_map)[[1]], 
+               aes(x=long, y=lat, group=group, fill=type),
+               color="grey30",size=.1)+
+ geom_polygon(data = gghole(fort_map)[[2]], 
+               aes(x=long, y=lat, group=group, fill=type),
+               color="grey30",size=.1)+
+ scale_fill_viridis("NEUJOBS\nclasificacion de \nregiones NUTS-2", 
+                     option = "B", discrete = T, end = .8)+
+ geom_path(data = bord, aes(x = long, y = lat, group = group),
+            color = "grey20",size = .5) + 
+ annotation_custom(grob = ggplotGrob(typ_mosaic), 
+                    xmin = 2500000, xmax = 4000000, 
+                    ymin = 4450000, ymax = 5450000)+
+ annotation_custom(grob = ggplotGrob(an_sub), 
+                    xmin = 5400000, xmax = 6600000, 
+                    ymin = 2950000, ymax = 4150000)+
+ labs(title = "Clasificacion Urbana / Rural de las regiones NUTS-2 de Europa\n",
+       caption = paste(strwrap(caption, width = 95), collapse = '\n'))+
+ theme(plot.title = element_text(size = 18),
+        plot.caption = element_text(size = 12))
+
+> ggsave(filename = "mapa.png", typ, width = 6.5, height = 8, dpi = 300)
+\end{lstlisting}
+
+%%%%%%%%%%%%%%%%%%%%%%%%% FIGURA 1.4. %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\noindent \textbullet\hspace{0.3cm} \textbf{Figura 1.4:} Convergencia mundial en la esperanza de vida masculina al nacer desde 1950.
+
+\begin{lstlisting}[language=R, caption=C\'odigo R para la elaboraci\'on de la convergencia mundial en la esperanza de vida masculina al nacer correspondiente a la figura 1.4]
+>library(tidyverse)
+>library(forcats)
+>library(wpp2017)
+>library(ggjoy)
+>library(viridis)
+>library(extrafont)
+
+>data(UNlocations)
+
+>countries <- UNlocations % >% 
+  filter(location_type == 4) % >% 
+  transmute(name = name % >% paste()) % >% 
+  as_vector()
+
+>data(e0M) 
+
+>e0M % >% 
+ filter(country % in% countries) % >% 
+ select(-last.observed) % >% 
+ gather(period, value, 3:15) % >% 
+ ggplot(aes(x = value, y = period % >% fct_rev()))+
+ geom_joy(aes(fill = period))+
+ scale_fill_viridis(discrete = T, option = "B", direction = -1, 
+                     begin = .1, end = .9)+
+ labs(x = "Esperanza de vida masculina al nacer",
+    y = "Período",
+    title = "Convergencia mundial en la esperanza de vida masculina al nacer desde 1950",
+    caption = "©Jose Rafael Caro Barrera - Hecho con R")+
+ theme_minimal(base_family =  "Roboto Condensed", base_size = 15)+
+ theme(legend.position = "none")
+\end{lstlisting}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%% CAPÍTULO 2 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{C\'odigos correspondientes al cap\'itulo 2}
+
+\subsection{Modelo de fertilidad}
+
+El siguiente c\'odigo  est\'a hecho sobre la base propuesta por \textit{Sevcíková, Alkema y Raftery, (2018)} \textcolor{red}{[1]} con la modificaci\'on introducida para el pa\'is, Espa\~na en nuestro caso y con datos de poblaci\'on total. El intervalo de edad se ha incrementado hasta los 90 a\~nos  y el periodo de estudio comprende hasta el a\~no 2014, \'ultimo a\~no de la base de datos de la que hemos extra\'ido la informaci\'on \texttt{(www.mortality.org)}. Hemos debido introducir una correcci\'on al c\'odigo, l\'inea 5, pues hab\'ia datos no disponibles en la fuente original. Mediante la modificaci\'on introducida en dicha l\'inea se han suprimido todas las advertencias.
+
+\begin{lstlisting}[language=R, caption=C\'odigo R para modelo de simulaci\'on de fertilidad correspondiente a la sección 2.2]
+> library("bayesTFR")
+
+# Creacion de los directorios de trabajo y calculo de las iteraciones
+> simulation.dir <- file.path(getwd(), "fertsimul")
+> m1 <- run.tfr.mcmc(nr.chains=5, iter=7000, output.dir=simulation.dir, seed=1) # el proceso de iteracion puede llevar varias horas
+> m2 <- continue.tfr.mcmc(iter=1000, output.dir=simulation.dir)
+> m3 <- get.tfr.mcmc(sim.dir=simulation.dir)
+> m3.chain2 <- tfr.mcmc(m3, chain.id=2)
+
+# Section 1.2
+> pred1 <- tfr.predict(sim.dir=simulation.dir, end.year=2100, burnin=2000, nr.traj=3000, verbose=TRUE)
+> pred2 <- get.tfr.prediction(sim.dir=simulation.dir)
+
+# Section 2.2
+# Resumen de las funciones
+> summary(m3, meta.only=TRUE)
+> summary(m3, country="Spain", par.names=NULL, thin=10, burnin=2000)
+> summary(pred2, country="Spain")
+
+# Trayectorias y curvas DL
+> tfr.trajectories.plot(pred2, country="Spain", pi=c(95, 80, 75), nr.traj=100) # Figure 2 (left)
+> tfr.trajectories.table(pred2, country="Spain", pi=c(95, 80, 75))
+> tfr.trajectories.plot.all(pred2, output.dir="trajplotall", nr.traj=100, output.type="pdf", verbose=TRUE)
+> DLcurve.plot(country="Spain", mcmc.list=m3, burnin=2000, pi=c(95, 80, 75), nr.curves=100) # Figure 2 (right)
+> DLcurve.plot.all(m3, output.dir="DLplotall", nr.curves=100, output.type="pdf", burnin=2000, verbose=TRUE)
+
+# ###### Creacion del mapa en el navegador ######
+> tfr.map(pred2)
+> params <- get.tfr.map.parameters(pred2)
+> do.call("tfr.map", params) # Figure 3
+> do.call("tfr.map", c(list(projection.year=2053, device="png", device.args=list(width=1000, file="worldTFR2053.png")), params)); 
+> dev.off() # Figura 
+> tfr.map.all(pred2, output.dir="tfrmaps", output.type="pdf")
+> tfr.map.gvis(pred2, 2053)
+
+# Parametros y densidades
+> tfr.partraces.plot(mcmc.list=m3, par.names="Triangle4", nr.points=100) # Figure 5 (left)
+> tfr.partraces.cs.plot(country="Spain", mcmc.list=m3, nr.points=100, par.names="Triangle_c4") # Figure 5 (right)
+> tfr.pardensity.plot(pred2, par.names=c("alphat", "Triangle4", "delta", "sigma0"), dev.ncol=4, bw=0.05) # Figure 6
+
+# Convergencia
+> diag1 <- tfr.diagnose(simulation.dir, thin=10, burnin=2000)
+> diag2 <- get.tfr.convergence(simulation.dir, thin=10, burnin=2000)
+> summary(diag2)
+> diag.list <- get.tfr.convergence.all(simulation.dir)
+
+# Section 2.3
+> data("UN2008")
+> colnames(UN2008)
+> data("WPP2008_LOCATIONS")
+> WPP2008_LOCATIONS[,2:3]
+> WPP2008_LOCATIONS[WPP2008_LOCATIONS[,"include_code"]==2,2:3]
+
+# Section 2.4
+> m4 <- run.tfr.mcmc.extra(simulation.dir, countries=900)
+> pred3 <- tfr.predict.extra(simulation.dir, save.as.ascii=0)
+> summary(m4, country=900, par.names=NULL)
+> summary(pred3, country=900)
+> tfr.trajectories.plot(pred3, country=900, nr.traj=100) # Figure 7 (left)
+> DLcurve.plot(country=900, mcmc.list=m4, burnin=2000, nr.curves=100) # Figure 7 (right)
+
+# Section 2.5
+> simulation.dir.miss <- file.path(getwd(), "runwithmissingdata")
+> my.tfr.file <- file.path(find.package("bayesTFR"), "data", "UN2008_with_last_obs.txt")
+> m5 <- run.tfr.mcmc(nr.chains=5, iter=8000, output.dir=simulation.dir.miss, my.tfr.file=my.tfr.file) # can take long time to run
+> pred4 <- tfr.predict(sim.dir=simulation.dir.miss, end.year=2100, burnin=2000, nr.traj=3000, verbose=TRUE)
+> tfr.trajectories.plot(pred4, country="Spain", nr.traj=100) # Figure 8 (left)
+> tfr.trajectories.plot(pred2, country="Spain", nr.traj=100) # Figure 8 (right)
+\end{lstlisting}
+
+\subsection{Modelos de mortalidad}
+
+Los siguientes c\'odigos  est\'an hechos sobre la base propuesta por \textit{Villegas y Millosovich (2016)} \textcolor{red}{[2]} y \textit{Spedicato y Clemente (2013)} \textcolor{red}{[3]} con la modificaci\'on introducida para el pa\'is, Espa\~na en nuestro caso y con datos de poblaci\'on masculina, femenina y total. El intervalo de edad se ha incrementado hasta los 90-110 a\~nos y el periodo de estudio comprende hasta el a\~no 2016, \'ultimo a\~no de la base de datos de la que hemos extra\'ido la informaci\'on \texttt{(www.mortality.org)}. Hemos debido introducir una correcci\'on al c\'odigo, l\'inea 5, pues hab\'ia datos no disponibles en la fuente original. Mediante la modificaci\'on introducida en dicha l\'inea se han suprimido todas las advertencias. 
+
+\begin{lstlisting}[language=R, caption=C\'odigo R para modelo de simulaci\'on estoc\'astica de mortalidad correspondiente a la sección 2.3]
+#Codigo para la simulacion, web de referencia: Human Mortality Database en www.mortality.org
+> library("StMoMo")
+> library(demography)
+
+> ESPdata <- hmd.mx(country = "ESP", username = "usuario de la base de datos", password = password )
+> suppressWarnings(hmd.mx(country = "ESP", username = "usuario de la base de datos", password = "password"))
+
+> Ext_ESP <- ESPdata$pop$total
+> Dxt_ESP <- ESPdata$rate$total * Ext_ESP
+
+> LCfit_ESP <- fit(lc(), Dxt = Dxt_ESP, Ext = Ext_ESP, ages = ESPdata$age, years = ESPdata$year, ages.fit = 0:90, years.fit = 1985:2014)
+
+> LCboot_ESP <- bootstrap(LCfit_ESP, nBoot = 2000, type = "semiparametric")
+> plot(LCboot_ESP)
+
+> LCsimPU_ESP <- simulate(LCboot_ESP, h = 24)
+> LCfor_ESP <- forecast(LCfit_ESP, h = 24)
+> LCsim_ESP <- simulate(LCfit_ESP, nsim = 2000, h = 24)
+> mxt <- LCfit_ESP$Dxt / LCfit_ESP$Ext
+> mxtHat <- fitted(LCfit_ESP, type = "rates")
+> mxtCentral <- LCfor_ESP$rates
+> mxtPred2.5 <- apply(LCsim_ESP$rates, c(1, 2), quantile, probs = 0.025)
+> mxtPred97.5 <- apply(LCsim_ESP$rates, c(1, 2), quantile, probs = 0.975)
+> mxtHatPU2.5 <- apply(LCsimPU_ESP$fitted, c(1, 2), quantile, probs = 0.025)
+> mxtHatPU97.5 <- apply(LCsimPU_ESP$fitted, c(1, 2), quantile, probs = 0.975)
+> mxtPredPU2.5 <- apply(LCsimPU_ESP$rates, c(1, 2), quantile, probs = 0.025)
+> mxtPredPU97.5 <- apply(LCsimPU_ESP$rates, c(1, 2), quantile, probs = 0.975)
+> x <- c("40", "60", "80")
+> matplot(LCfit_ESP$years, t(mxt[x, ]),
++ xlim = range(LCfit_ESP$years, LCfor_ESP$years),
++ ylim = range(mxtHatPU97.5[x, ], mxtPredPU2.5[x, ], mxt[x, ]),
++ type = "p", xlab = "years", ylab = "mortality rates (log scale)",
++ log = "y", pch = 20, col = "black")
+> matlines(LCfit_ESP$years, t(mxtHat[x, ]), lty = 1, col = "black")
+> matlines(LCfit_ESP$years, t(mxtHatPU2.5[x, ]), lty = 5, col = "red")
+> matlines(LCfit_ESP$years, t(mxtHatPU97.5[x, ]), lty = 5, col = "red")
+> matlines(LCfor_ESP$years, t(mxtCentral[x, ]), lty = 4, col = "black")
+> matlines(LCsim_ESP$years, t(mxtPredPU2.5[x, ]), lty = 3, col = "black")
+> matlines(LCsim_ESP$years, t(mxtPredPU97.5[x, ]), lty = 3, col = "black")
+> matlines(LCsimPU_ESP$years, t(mxtPredPU2.5[x, ]), lty = 5, col = "red")
+> matlines(LCsimPU_ESP$years, t(mxtPredPU97.5[x, ]), lty = 5, col = "red")
+> text(1986, mxtHatPU2.5[x, "1995"], labels = c("x=40", "x=60", "x=80"))
+\end{lstlisting}
+
+\begin{lstlisting}[language=R, caption=C\'odigo R para modelo de simulaci\'on estoc\'astica de mortalidad correspondiente a la sección 2.3]
+# Mortality forecasting based on Hyndman et. al (2011) and Spedicato (2013).
+# Code replicated from "Mortality projection with demography and lifecontingencies packages" adapated to spanish population.
+
+rm(list=ls())
+library(demography)
+library(lifecontingencies)
+library(forecast)
+
+# Load data from HMD
+spainDemo<-hmd.mx(country="ESP", username="jrcarobarrera@gmail.com",
+password = "doctorado2018", label = "Spain") 
+
+#load(file="mortalityDatasets.RData")
+
+par(mfrow=c(1,3))
+plot(spainDemo,series="male",datatype="rate", main="Tasa Masculina", xlab = "Edad")
+plot(spainDemo,series="female",datatype="rate", main="Tasa Femenina", xlab = "Edad")
+plot(spainDemo,"total",datatype="rate", main="Tasa Total", xlab = "Edad")
+
+par(mfrow=c(1,3))
+plot(spainDemo, series = "male", datatype = "rate",
+    plot.type = "time", main ="Tasa Masculina",xlab = "Años")
+plot(spainDemo, series = "female", datatype = "rate",
+    plot.type = "time", main = "Tasa Femenina", xlab = "Años")
+plot(spainDemo, series = "total", datatype = "rate",
+    plot.type = "time", main = "Tasa Total", xlab ="Años")
+
+spainLcaM<-lca(spainDemo,series="male",max.age=100)
+spainLcaF<-lca(spainDemo,series="female",max.age=100)
+spainLcaT<-lca(spainDemo,series="total",max.age=100)
+
+par(mfrow=c(1,3))
+plot(spainLcaT$ax, main = "ax", xlab = "Edad",ylab = "ax", type = "l")
+lines(x = spainLcaF$age, y = spainLcaF$ax, main = "ax", col = "red")
+lines(x = spainLcaM$age, y = spainLcaM$ax, main = "ax", col = "blue")
+legend("topleft" , c("Masculino","Femenino","Total"),
+       cex = 0.8, col = c("blue","red","black"),lty = 1);
+plot(spainLcaT$bx, main = "bx", xlab = "Edad", ylab = "bx", type = "l")
+lines(x = spainLcaF$age, y = spainLcaF$bx, main = "bx", col = "red")
+lines(x = spainLcaM$age, y = spainLcaM$bx, main = "bx", col = "blue")
+legend("topright" , c("Masculino","Femenino","Total"),
+        cex = 0.8, col = c("blue","red","black"),lty = 1);
+plot(spainLcaT$kt, main = "kt", xlab = "Año", ylab = "kt", type = "l")
+lines(x = spainLcaF$year, y = spainLcaF$kt, main="kt", col="red")
+lines(x = spainLcaM$year, y = spainLcaM$kt, main="kt", col="blue")
+legend("topright" , c("Masculino","Femenino","Total"),
+        cex = 0.8, col = c("blue","red","black"),lty = 1);
+
+fM <- forecast(spainLcaM, h = 110)
+fF <- forecast(spainLcaF, h = 110)
+fT <- forecast(spainLcaT, h = 110)
+
+par(mfrow = c(1,3))
+plot(fM$kt.f,main="Masculino")
+plot(fF$kt.f,main="Femenino")
+plot(fT$kt.f,main="Total")
+
+ratesM<-cbind(spainDemo$rate$male[1:100,],fM$rate$male[1:100,])
+ratesF<-cbind(spainDemo$rate$female[1:100,],fF$rate$female[1:100,])
+ratesT<-cbind(spainDemo$rate$total[1:100,],fT$rate$total[1:100,])
+
+par(mfrow=c(1,1))
+plot(seq(min(spainDemo$year),max(spainDemo$year)+110),ratesF[65,],
+        col="red",xlab="Años",ylab="Tasas de fallecimiento",type="l")
+lines(seq(min(spainDemo$year),max(spainDemo$year)+110),ratesM[65,],
+        col="blue",xlab="Años",ylab="Tasas de fallecimiento")
+lines(seq(min(spainDemo$year),max(spainDemo$year)+110),ratesT[65,],
+        col="black",xlab="Años",ylab="Tasas de fallecimiento")
+legend("topright" , c("Masculino","Femenino","Total"),
+        cex=0.8,col=c("blue","red","black"),lty=1);
+\end{lstlisting}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%% REFERENCIAS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Referencias bibliogr\'aficas}
+
+\noindent \textcolor{red}{[1]} Sevcíková, H., Alkema, L. y Raftery, A. E.: \textbf{``bayesTFR: Bayesian Fertility Projection''}, R package version 6.2, (2018) [Disponible on line] \texttt{https://cran.r-project.org/web/packages/\\
+bayesTFR/index.html}.\\ 
+
+\noindent \textcolor{red}{[2]} Villegas, Andr\'es y Millosovich, Pietro: \textbf{``StMoMo: An R Package for Stochastic Mortality Modelling''}, R package version 0.3.1, (2016) [Disponible on line] \texttt{http://CRAN.R-project.org/package=StMoMo}.\\
+
+\noindent \textcolor{red}{[3]} Spedicato, Giorgio A. y Clemente, Gian P.: \textbf{``Mortality Projection with `demography' and `lifecontingencies' packages''}, R package version 1.21, (2013) [Disponible on line] \texttt{http://CRAN.R-project.org/\\ package=demography}.\\
+
+
+
+
+
+
